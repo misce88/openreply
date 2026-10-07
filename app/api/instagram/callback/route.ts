@@ -3,7 +3,13 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
 import { getBaseUrl } from "@/lib/env";
 import { canConnectInstagramAccount } from "@/lib/instagram-accounts";
-import { getLongLivedToken, getUserInfo, subscribeInstagramAccountToWebhooks } from "@/lib/meta/client";
+import {
+  getFacebookLoginAccounts,
+  getLongLivedToken,
+  getUserInfo,
+  isFacebookLoginMode,
+  subscribeInstagramAccountToWebhooks,
+} from "@/lib/meta/client";
 import {
   encryptToken,
   exchangeCodeForToken,
@@ -47,8 +53,33 @@ export async function GET(request: NextRequest) {
       code,
       redirectUri
     );
-    const { accessToken: longLivedToken, expiresIn } =
-      await getLongLivedToken(shortLivedToken);
+    const exchanged = await getLongLivedToken(shortLivedToken);
+    let longLivedToken = exchanged.accessToken;
+    let expiresIn = exchanged.expiresIn;
+
+    if (isFacebookLoginMode()) {
+      // Facebook Login returns a user token. Pick the granted Page that has an
+      // Instagram professional account and keep its Page token instead. When
+      // several were granted, prefer one this instance has not connected yet,
+      // so a second profile can be added by simply connecting again.
+      const candidates = await getFacebookLoginAccounts(longLivedToken);
+      if (candidates.length === 0) {
+        throw new Error(
+          "No Facebook Page with a linked Instagram professional account was granted. Link the Instagram profile to a Page and select both in the Facebook dialog."
+        );
+      }
+      const known = await prisma.instagramAccount.findMany({
+        where: { instagramId: { in: candidates.map((c) => c.instagram.id) } },
+        select: { instagramId: true },
+      });
+      const knownIds = new Set(known.map((k) => k.instagramId));
+      const chosen =
+        candidates.find((c) => !knownIds.has(c.instagram.id)) ?? candidates[0];
+      longLivedToken = chosen.pageAccessToken;
+      // Page tokens do not expire; the daily cron re-validates them.
+      expiresIn = 5184000;
+    }
+
     const userInfo = await getUserInfo(longLivedToken);
     // Webhooks and the messaging API key off the professional account ID
     // (user_id), not the app-scoped `id`. Store user_id so comment webhooks
