@@ -5,6 +5,7 @@ import { getBaseUrl } from "@/lib/env";
 import { canConnectInstagramAccount } from "@/lib/instagram-accounts";
 import {
   getFacebookLoginAccounts,
+  getLastSubscriptionDetail,
   getLongLivedToken,
   getUserInfo,
   isFacebookLoginMode,
@@ -107,6 +108,18 @@ export async function GET(request: NextRequest) {
         longLivedToken
       );
       webhookSubscribed = Boolean(subscription.success);
+      if (isFacebookLoginMode()) {
+        await prisma.operationalEvent
+          .create({
+            data: {
+              source: "SYSTEM",
+              level: "INFO",
+              workspaceId: state.workspaceId,
+              message: `Page webhook subscription: ${getLastSubscriptionDetail().slice(0, 400)}`,
+            },
+          })
+          .catch(() => {});
+      }
     } catch (subscriptionError) {
       console.warn(
         "[Instagram Callback] Webhook subscription failed:",

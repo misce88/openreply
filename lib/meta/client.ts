@@ -959,14 +959,22 @@ export async function refreshLongLivedToken(
   };
 }
 
+/** What Meta answered to the most recent webhook subscription (Facebook Login mode). */
+let lastSubscriptionDetail = "";
+export function getLastSubscriptionDetail(): string {
+  return lastSubscriptionDetail;
+}
+
 export async function subscribeInstagramAccountToWebhooks(
   instagramAccountId: string,
   accessToken: string
 ): Promise<{ success: boolean }> {
   if (isFacebookLoginMode()) {
-    // Facebook Login: Instagram webhooks are delivered once the linked Page has
-    // the app installed. Meta requires at least one Page field; try the
-    // messaging field first and fall back to `feed` if it is not granted.
+    // Facebook Login: Instagram comment webhooks are delivered once the linked
+    // Page has the app installed; Instagram DM webhooks additionally need the
+    // Page subscribed to the messaging fields. Try the full set first and fall
+    // back to `feed`, but keep what Meta answered so a silent downgrade to
+    // comments-only is visible in Diagnostics instead of looking like success.
     const subscribe = async (fields: string) => {
       const url = new URL(`${facebookGraphBase()}/me/subscribed_apps`);
       url.searchParams.set("subscribed_fields", fields);
@@ -976,10 +984,32 @@ export async function subscribeInstagramAccountToWebhooks(
       });
       return handleResponse<{ success: boolean }>(response);
     };
+    const readBack = async (): Promise<string> => {
+      try {
+        const url = new URL(`${facebookGraphBase()}/me/subscribed_apps`);
+        const response = await fetch(url.toString(), {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const data = await handleResponse<{
+          data?: Array<{ id?: string; subscribed_fields?: string[] }>;
+        }>(response);
+        return (data.data ?? [])
+          .map((a) => `${a.id}:${(a.subscribed_fields ?? []).join("+")}`)
+          .join(" | ");
+      } catch (error) {
+        return `read-back failed: ${error instanceof Error ? error.message : "unknown"}`;
+      }
+    };
+    const full = "messages,messaging_postbacks,message_reads,feed";
     try {
-      return await subscribe("messages,messaging_postbacks,feed");
-    } catch {
-      return subscribe("feed");
+      const result = await subscribe(full);
+      lastSubscriptionDetail = `requested=${full}; ok; now=${await readBack()}`;
+      return result;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown";
+      const result = await subscribe("feed");
+      lastSubscriptionDetail = `requested=${full}; REFUSED: ${reason}; fell back to feed; now=${await readBack()}`;
+      return result;
     }
   }
 
