@@ -288,18 +288,27 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
   } = job.data;
   const requeueAttempt = job.data.requeueAttempt ?? 0;
 
-  const automations = await prisma.automation.findMany({
+  // Facebook Page posts have ids of their own, so a campaign bound to the
+  // Instagram reel can never match by post. Match those by keyword alone and
+  // let only the newest matching campaign answer.
+  const isFacebook = job.data.platform === "FACEBOOK";
+
+  const foundAutomations = await prisma.automation.findMany({
     where: {
       ...connectionScope(job.data),
       // Match campaigns bound to this specific post, plus any-post campaigns.
       // A comment left on an ad carries the ad's own media id, while the
       // campaign is bound to the post the ad was created from, so both ids
       // have to be considered or the comment is dropped without a trace.
-      OR: [
-        { postId: mediaId },
-        ...(originalMediaId ? [{ postId: originalMediaId }] : []),
-        { matchAnyPost: true },
-      ],
+      ...(isFacebook
+        ? {}
+        : {
+            OR: [
+              { postId: mediaId },
+              ...(originalMediaId ? [{ postId: originalMediaId }] : []),
+              { matchAnyPost: true },
+            ],
+          }),
       isActive: true,
       instagramAccount: {
         instagramId: instagramAccountId,
@@ -319,6 +328,16 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
     },
     orderBy: { createdAt: "asc" },
   });
+
+  const automations = isFacebook
+    ? foundAutomations
+        .filter(
+          (a) =>
+            a.matchAnyWord ||
+            matchKeywords(commentText, a.keywords, a.wholeWordMatch).matched
+        )
+        .slice(-1)
+    : foundAutomations;
 
   for (const automation of automations) {
     // "Any word" campaigns fire on every comment; otherwise require a keyword hit.

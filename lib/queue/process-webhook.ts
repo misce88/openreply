@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/db/client';
 import { getDMQueue, MESSAGE_JOB_NAME, POSTBACK_JOB_NAME } from '@/lib/queue/client';
-import { parseCommentEvents, parseMessageEvents, parsePostbackEvents, parseReadEvents } from '@/lib/meta/webhook';
+import { parseCommentEvents, parseMessageEvents, parsePostbackEvents, parseReadEvents, parseFacebookPageCommentEvents } from '@/lib/meta/webhook';
+import { resolvePageIdForToken } from '@/lib/meta/client';
+import { decryptToken } from '@/lib/meta/oauth';
 import { Prisma, type InstagramProvider } from '@/app/generated/prisma/client';
 
 const OPENING_DM_READ_FALLBACK_DELAY_MS = 5 * 60 * 1000;
@@ -9,6 +11,10 @@ type InstagramPayload = Parameters<typeof parseCommentEvents>[0];
 export async function processInstagramWebhook({ payload: incoming, provider, workspaceId }: {
   payload: InstagramPayload; provider: InstagramProvider; workspaceId?: string;
 }) {
+  if ((incoming.object as string) === 'page' && Array.isArray(incoming.entry)) {
+    await processFacebookPageWebhook(incoming, provider);
+    return;
+  }
   if (incoming.object !== 'instagram' || !Array.isArray(incoming.entry)) return;
   const accounts = await prisma.instagramAccount.findMany({
     where: { instagramId: { in: incoming.entry.map(e => e.id) }, provider, ...(workspaceId ? { workspaceId } : {}) },
@@ -200,6 +206,72 @@ export async function processInstagramWebhook({ payload: incoming, provider, wor
       },
     });
 
+    throw error;
+  }
+}
+
+async function processFacebookPageWebhook(incoming: InstagramPayload, provider: InstagramProvider) {
+  const events = parseFacebookPageCommentEvents(incoming as Parameters<typeof parseFacebookPageCommentEvents>[0]);
+  if (!events.length) return;
+
+  const accounts = await prisma.instagramAccount.findMany({
+    where: { provider },
+    select: { id: true, instagramId: true, workspaceId: true, accessToken: true },
+  });
+  const byPage = new Map<string, (typeof accounts)[number]>();
+  for (const account of accounts) {
+    try {
+      byPage.set(await resolvePageIdForToken(decryptToken(account.accessToken)), account);
+    } catch {
+      // Not a Page token, or an expired one: this account cannot serve Page comments.
+    }
+  }
+
+  const matched = events.filter((event) => byPage.has(event.pageId));
+  if (!matched.length) return;
+
+  const webhookEvent = await prisma.webhookEvent.create({
+    data: {
+      object: 'page',
+      payload: incoming as unknown as Prisma.InputJsonValue,
+      workspaceId: byPage.get(matched[0].pageId)!.workspaceId,
+      status: 'PENDING',
+    },
+  });
+
+  try {
+    const queue = getDMQueue();
+    for (const event of matched) {
+      const account = byPage.get(event.pageId)!;
+      await queue.add(
+        'process-comment',
+        {
+          instagramAccountId: account.instagramId,
+          accountConnectionId: account.id,
+          commentId: event.commentId,
+          commentText: event.commentText,
+          commenterId: event.commenterId,
+          commenterName: event.commenterName,
+          mediaId: event.postId,
+          source: 'WEBHOOK',
+          platform: 'FACEBOOK',
+        },
+        { jobId: `comment_${account.instagramId}_fb_${event.commentId}` }
+      );
+    }
+    await prisma.webhookEvent.update({
+      where: { id: webhookEvent.id },
+      data: { status: 'PROCESSED', processedAt: new Date() },
+    });
+  } catch (error) {
+    await prisma.webhookEvent.update({
+      where: { id: webhookEvent.id },
+      data: {
+        status: 'FAILED',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        processedAt: new Date(),
+      },
+    });
     throw error;
   }
 }

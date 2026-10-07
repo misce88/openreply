@@ -104,6 +104,8 @@ const FACEBOOK_LOGIN_SCOPES = [
   "pages_read_engagement",
   "pages_manage_metadata",
   "pages_messaging",
+  "pages_manage_engagement",
+  "pages_read_user_content",
   "business_management",
 ].join(",");
 

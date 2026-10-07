@@ -52,6 +52,23 @@ async function resolveInstagramIdForPageToken(accessToken: string): Promise<stri
   return id;
 }
 
+// Page token -> Facebook Page id (Facebook Login mode).
+const pageIdByToken = new Map<string, string>();
+
+export async function resolvePageIdForToken(accessToken: string): Promise<string> {
+  const cached = pageIdByToken.get(accessToken);
+  if (cached) return cached;
+  const url = new URL(`${facebookGraphBase()}/me`);
+  url.searchParams.set("fields", "id");
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await handleResponse<{ id?: string }>(response);
+  if (!data.id) throw new Error("Could not resolve the Facebook Page id");
+  pageIdByToken.set(accessToken, data.id);
+  return data.id;
+}
+
 export class MetaApiError extends Error {
   constructor(
     public code: number,
@@ -452,8 +469,13 @@ export async function sendCommentReply(
   commentId: string,
   message: string
 ): Promise<{ id: string }> {
+  // Facebook Page comment ids look like "<postId>_<commentId>"; Instagram ones
+  // are purely numeric. Page comments are answered on the /comments edge.
+  const replyUrl = commentId.includes("_")
+    ? `${facebookGraphBase()}/${commentId}/comments`
+    : `${instagramGraphBase()}/${commentId}/replies`;
   const response = await fetch(
-    `${instagramGraphBase()}/${commentId}/replies`,
+    replyUrl,
     {
       method: "POST",
       headers: {

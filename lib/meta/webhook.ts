@@ -270,3 +270,54 @@ export function parseReadEvents(payload: WebhookPayload): WebhookReadEvent[] {
 
   return events;
 }
+
+export interface FacebookPageCommentEvent {
+  pageId: string;
+  commentId: string;
+  commentText: string;
+  commenterId: string;
+  commenterName?: string;
+  postId: string;
+}
+
+/**
+ * Parse comments left on a Facebook Page's posts (object "page", field "feed").
+ * Reels cross-posted from Instagram land on the Page as separate posts, so the
+ * same keyword campaigns are applied to them.
+ */
+export function parseFacebookPageCommentEvents(payload: {
+  object?: string;
+  entry?: Array<{
+    id?: string;
+    changes?: Array<{ field?: string; value?: Record<string, unknown> }>;
+  }>;
+}): FacebookPageCommentEvent[] {
+  const events: FacebookPageCommentEvent[] = [];
+  if (payload.object !== "page") return events;
+
+  for (const entry of payload.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      if (change.field !== "feed") continue;
+      const value = change.value ?? {};
+      if (value.item !== "comment" || value.verb !== "add") continue;
+
+      const commentId = typeof value.comment_id === "string" ? value.comment_id : undefined;
+      const postId = typeof value.post_id === "string" ? value.post_id : undefined;
+      const from = (value.from ?? {}) as { id?: string; name?: string };
+      if (!entry.id || !commentId || !postId) continue;
+      // The Page's own comments and replies (including ours) must not trigger.
+      if (from.id === entry.id) continue;
+
+      events.push({
+        pageId: entry.id,
+        commentId,
+        commentText: typeof value.message === "string" ? value.message : "",
+        // Meta omits `from` when it cannot share the commenter's identity.
+        commenterId: from.id ?? `fb_${commentId}`,
+        commenterName: from.name,
+        postId,
+      });
+    }
+  }
+  return events;
+}

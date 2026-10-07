@@ -37,6 +37,9 @@ export interface ProcessCommentJob {
   // Which path enqueued this comment. It is not copied to ProcessedComment or
   // used for reconciliation dedup.
   source?: CommentSource;
+  // Set for comments on the linked Facebook Page. Those posts have their own
+  // ids, so campaigns are matched by keyword only instead of by post.
+  platform?: "FACEBOOK";
 }
 
 // Delivered when a user taps an opening DM's button — carries the reveal target.
