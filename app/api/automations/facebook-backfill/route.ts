@@ -17,6 +17,9 @@ const bodySchema = z.object({
   // Only recover short comments (the keyword on its own), not long remarks
   // that merely contain the word.
   maxCommentLength: z.number().int().min(1).max(500).optional(),
+  // Re-send comments whose private reply Facebook refused, one every few
+  // seconds so a rate limit is not hit again.
+  retryFailed: z.boolean().default(false),
 });
 
 /**
@@ -35,7 +38,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ success: false, error: "Invalid input" }, { status: 400 });
   }
-  const { instagramAccountId, days, dryRun, maxCommentLength } = parsed.data;
+  const { instagramAccountId, days, dryRun, maxCommentLength, retryFailed } = parsed.data;
 
   const account = await prisma.instagramAccount.findFirst({
     where: { id: instagramAccountId, workspaceId },
@@ -78,6 +81,7 @@ export async function POST(request: NextRequest) {
     const logged = await prisma.dmLog.findFirst({
       where: {
         instagramAccountId: account.id,
+        ...(retryFailed ? { status: { not: "FAILED" as const } } : {}),
         OR: [{ commentId: c.id }, { commentId: { endsWith: `_${suffix}` } }, { commentId: suffix }],
       },
       select: { id: true },
@@ -105,7 +109,12 @@ export async function POST(request: NextRequest) {
           source: "WEBHOOK",
           platform: "FACEBOOK",
         },
-        { jobId: `comment_${account.instagramId}_fb_${c.id}` }
+        retryFailed
+          ? {
+              jobId: `comment_${account.instagramId}_fb_${c.id}_retry${Date.now()}`,
+              delay: enqueued * 6000,
+            }
+          : { jobId: `comment_${account.instagramId}_fb_${c.id}` }
       );
       enqueued++;
     }
