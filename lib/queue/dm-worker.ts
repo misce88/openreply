@@ -18,6 +18,7 @@ import {
   type ProcessMessageJob,
   type ProcessPostbackJob,
   type ProcessFollowUpJob,
+  type MessagingPlatform,
 } from "./client";
 import { prisma } from "@/lib/db/client";
 import {
@@ -272,6 +273,16 @@ async function sendRevealDirectMessage({
 }
 
 
+/**
+ * Campaigns answer only on the channels they are switched on for. Facebook
+ * covers the linked Page (its post comments and Messenger DMs).
+ */
+function channelScope(platform: MessagingPlatform | undefined) {
+  return platform === "FACEBOOK"
+    ? { facebookEnabled: true }
+    : { instagramEnabled: true };
+}
+
 function connectionScope(data: DmQueueJob) {
   return data.accountConnectionId ? { instagramAccountId: data.accountConnectionId } : {};
 }
@@ -310,6 +321,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
             ],
           }),
       isActive: true,
+      ...channelScope(job.data.platform),
       instagramAccount: {
         instagramId: instagramAccountId,
       },
@@ -656,7 +668,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
     // status at comment time: confirmed followers get the link now, everyone
     // else gets the "follow me first" prompt (re-verified on tap).
     let sendFollowPrompt = false;
-    if (automation.requireFollow && !useOpeningDm) {
+    if (automation.requireFollow && !useOpeningDm && !isFacebook) {
       const alreadyFollows = await getUserFollowStatus({
         context: accessToken,
         recipientId: commenterId,
@@ -696,7 +708,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
           buttonTitle: automation.openingDmButtonLabel as string,
           // The ":open" marker tells a tap here apart from the follow prompt's
           // own "I'm following" button, which sends the same prefix.
-          payload: `${automation.requireFollow ? "followcheck" : "reveal"}:${automation.id}:open`,
+          payload: `${automation.requireFollow && !isFacebook ? "followcheck" : "reveal"}:${automation.id}:open`,
           postId: mediaId,
         });
       } else if (sendFollowPrompt) {
@@ -917,7 +929,12 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
   const fromOpeningDm = marker === "open";
 
   const automation = await prisma.automation.findFirst({
-    where: { id: automationId, isActive: true, ...connectionScope(job.data) },
+    where: {
+      id: automationId,
+      isActive: true,
+      ...connectionScope(job.data),
+      ...channelScope(job.data.platform),
+    },
     include: {
       instagramAccount: true,
       workspace: true,
@@ -988,7 +1005,13 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
   // be bypassable by just reading the DM and waiting. On a tap, following or
   // unverifiable (null) falls through and delivers the link — fail-open so a
   // real follower is never trapped.
-  if ((isFollowCheck || fallback) && automation.requireFollow) {
+  // Messenger has no follower relationship to check, so on Facebook a tap
+  // always reveals the link.
+  if (
+    (isFollowCheck || fallback) &&
+    automation.requireFollow &&
+    job.data.platform !== "FACEBOOK"
+  ) {
     const follows = await getUserFollowStatus({
       context: accessToken,
       recipientId: userId,
@@ -1158,6 +1181,7 @@ async function processPostback(job: Job<ProcessPostbackJob>): Promise<void> {
           userId,
           automationId: automation.id,
           commenterName,
+          platform: job.data.platform,
         },
         {
           delay: delayMs,
@@ -1303,6 +1327,7 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
       ...connectionScope(job.data),
       dmTriggerEnabled: true,
       isActive: true,
+      ...channelScope(job.data.platform),
       instagramAccount: { instagramId: instagramAccountId },
     },
     include: {
@@ -1422,7 +1447,7 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
     // the user has already claimed to follow; here it would hand the link to
     // anyone whose status the API happens not to resolve.
     let sendFollowPrompt = false;
-    if (automation.requireFollow) {
+    if (automation.requireFollow && job.data.platform !== "FACEBOOK") {
       const follows = await getUserFollowStatus({
         context: accessToken,
         recipientId: senderId,
@@ -1492,6 +1517,7 @@ async function processMessage(job: Job<ProcessMessageJob>): Promise<void> {
               userId: senderId,
               automationId: automation.id,
               commenterName,
+              platform: job.data.platform,
             },
             {
               delay: Math.max(0, automation.followUpDelayMinutes ?? 0) * 60_000,

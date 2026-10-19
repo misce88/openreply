@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db/client';
 import { getDMQueue, MESSAGE_JOB_NAME, POSTBACK_JOB_NAME } from '@/lib/queue/client';
-import { parseCommentEvents, parseMessageEvents, parsePostbackEvents, parseReadEvents, parseFacebookPageCommentEvents } from '@/lib/meta/webhook';
+import { parseCommentEvents, parseMessageEvents, parsePostbackEvents, parseReadEvents, parseFacebookPageCommentEvents, parseFacebookPageMessageEvents, parseFacebookPagePostbackEvents } from '@/lib/meta/webhook';
 import { resolvePageIdForToken } from '@/lib/meta/client';
 import { decryptToken } from '@/lib/meta/oauth';
 import { Prisma, type InstagramProvider } from '@/app/generated/prisma/client';
@@ -211,8 +211,12 @@ export async function processInstagramWebhook({ payload: incoming, provider, wor
 }
 
 async function processFacebookPageWebhook(incoming: InstagramPayload, provider: InstagramProvider) {
-  const events = parseFacebookPageCommentEvents(incoming as Parameters<typeof parseFacebookPageCommentEvents>[0]);
-  if (!events.length) return;
+  const pagePayload = incoming as Parameters<typeof parseFacebookPageCommentEvents>[0] &
+    Parameters<typeof parseFacebookPageMessageEvents>[0];
+  const comments = parseFacebookPageCommentEvents(pagePayload);
+  const messages = parseFacebookPageMessageEvents(pagePayload);
+  const postbacks = parseFacebookPagePostbackEvents(pagePayload);
+  if (!comments.length && !messages.length && !postbacks.length) return;
 
   const accounts = await prisma.instagramAccount.findMany({
     where: { provider },
@@ -223,25 +227,29 @@ async function processFacebookPageWebhook(incoming: InstagramPayload, provider: 
     try {
       byPage.set(await resolvePageIdForToken(decryptToken(account.accessToken)), account);
     } catch {
-      // Not a Page token, or an expired one: this account cannot serve Page comments.
+      // Not a Page token, or an expired one: this account cannot serve Page events.
     }
   }
 
-  const matched = events.filter((event) => byPage.has(event.pageId));
-  if (!matched.length) return;
+  const matchedComments = comments.filter((event) => byPage.has(event.pageId));
+  const matchedMessages = messages.filter((event) => byPage.has(event.pageId));
+  const matchedPostbacks = postbacks.filter((event) => byPage.has(event.pageId));
+  const firstPageId =
+    matchedComments[0]?.pageId ?? matchedMessages[0]?.pageId ?? matchedPostbacks[0]?.pageId;
+  if (!firstPageId) return;
 
   const webhookEvent = await prisma.webhookEvent.create({
     data: {
       object: 'page',
       payload: incoming as unknown as Prisma.InputJsonValue,
-      workspaceId: byPage.get(matched[0].pageId)!.workspaceId,
+      workspaceId: byPage.get(firstPageId)!.workspaceId,
       status: 'PENDING',
     },
   });
 
   try {
     const queue = getDMQueue();
-    for (const event of matched) {
+    for (const event of matchedComments) {
       const account = byPage.get(event.pageId)!;
       await queue.add(
         'process-comment',
@@ -259,6 +267,47 @@ async function processFacebookPageWebhook(incoming: InstagramPayload, provider: 
         { jobId: `comment_${account.instagramId}_fb_${event.commentId}` }
       );
     }
+
+    // Messenger DMs to the Page → the same keyword campaigns as Instagram DMs.
+    for (const event of matchedMessages) {
+      const account = byPage.get(event.pageId)!;
+      await queue.add(
+        MESSAGE_JOB_NAME,
+        {
+          instagramAccountId: account.instagramId,
+          accountConnectionId: account.id,
+          messageId: event.messageId,
+          messageText: event.messageText,
+          senderId: event.senderId,
+          platform: 'FACEBOOK',
+        },
+        {
+          jobId: `message_${account.instagramId}_fb_${Buffer.from(event.messageId).toString('base64url')}`,
+        }
+      );
+    }
+
+    // Button taps on Messenger (opening DM / link reveal).
+    for (const event of matchedPostbacks) {
+      const account = byPage.get(event.pageId)!;
+      await queue.add(
+        POSTBACK_JOB_NAME,
+        {
+          instagramAccountId: account.instagramId,
+          accountConnectionId: account.id,
+          userId: event.userId,
+          payload: event.payload,
+          mid: event.mid,
+          platform: 'FACEBOOK',
+        },
+        {
+          jobId: `postback_${account.instagramId}_fb_${event.userId}_${(
+            event.mid ?? event.payload
+          ).replace(/:/g, '_')}`,
+        }
+      );
+    }
+
     await prisma.webhookEvent.update({
       where: { id: webhookEvent.id },
       data: { status: 'PROCESSED', processedAt: new Date() },

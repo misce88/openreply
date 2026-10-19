@@ -69,7 +69,8 @@ function errMessage(error: unknown): string {
 /** One reconciliation pass across every active campaign. */
 export async function reconcileComments(): Promise<void> {
   const automations = await prisma.automation.findMany({
-    where: { isActive: true },
+    // Polling only covers Instagram media; Facebook-only campaigns are skipped.
+    where: { isActive: true, instagramEnabled: true },
     select: {
       id: true,
       name: true,

@@ -331,6 +331,7 @@ describe("DM Worker — Full Pipeline", () => {
       where: {
         OR: [{ postId: "media_101" }, { matchAnyPost: true }],
         isActive: true,
+        instagramEnabled: true,
         instagramAccount: { instagramId: "ig_456" },
       },
       include: {
@@ -1763,4 +1764,87 @@ it("retains the public reply claim if sending succeeded but its log write failed
   await process({ ...createMockJob(), id: "next-poll" });
   expect(sendCommentReply).toHaveBeenCalledTimes(1);
   expect(mockSendPrivateReply).toHaveBeenCalledTimes(1);
+});
+
+describe("DM Worker — channels (Instagram / linked Facebook Page)", () => {
+  it("matches Facebook Page comments by keyword only, on Facebook-enabled campaigns", async () => {
+    const processor = getProcessor();
+    await processor(createMockJob({ ...mockJobData, platform: "FACEBOOK", mediaId: "page_1_post_2" }));
+
+    const where = mockPrisma.automation.findMany.mock.calls[0][0].where;
+    expect(where).toMatchObject({ isActive: true, facebookEnabled: true });
+    expect(where).not.toHaveProperty("OR");
+    expect(where).not.toHaveProperty("instagramEnabled");
+  });
+
+  it("does not apply the follow requirement to Facebook Page comments", async () => {
+    mockGetUserFollowStatus.mockResolvedValue(false);
+    mockPrisma.automation.findMany.mockResolvedValue([
+      {
+        ...mockAutomation,
+        requireFollow: true,
+        followPromptMessage: "Follow me first",
+        followPromptButtonLabel: "I'm following",
+      },
+    ]);
+
+    const processor = getProcessor();
+    await processor(createMockJob({ ...mockJobData, platform: "FACEBOOK" }));
+
+    expect(mockGetUserFollowStatus).not.toHaveBeenCalled();
+    expect(mockSendPrivateReplyWithButton).not.toHaveBeenCalled();
+    // The link itself goes out instead of the follow prompt.
+    expect(mockSendPrivateReply).toHaveBeenCalled();
+  });
+
+  it("answers Messenger DMs only with Facebook-enabled campaigns and no follow check", async () => {
+    mockGetUserFollowStatus.mockResolvedValue(false);
+    mockPrisma.automation.findMany.mockResolvedValue([
+      { ...mockAutomation, dmTriggerEnabled: true, requireFollow: true },
+    ]);
+
+    const processor = getProcessor();
+    await processor({
+      name: "process-message",
+      data: {
+        instagramAccountId: "ig_456",
+        messageId: "m_fb_1",
+        messageText: "CASA",
+        senderId: "psid_1",
+        platform: "FACEBOOK",
+      },
+      id: "message_job_fb",
+      attemptsMade: 0,
+    });
+
+    expect(mockPrisma.automation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ dmTriggerEnabled: true, facebookEnabled: true }),
+      })
+    );
+    expect(mockGetUserFollowStatus).not.toHaveBeenCalled();
+    expect(mockSendDirectMessageWithButton).not.toHaveBeenCalled();
+  });
+
+  it("keeps Instagram DMs on Instagram-enabled campaigns", async () => {
+    mockPrisma.automation.findMany.mockResolvedValue([]);
+    const processor = getProcessor();
+    await processor({
+      name: "process-message",
+      data: {
+        instagramAccountId: "ig_456",
+        messageId: "m_ig_1",
+        messageText: "CASA",
+        senderId: "igsid_1",
+      },
+      id: "message_job_ig",
+      attemptsMade: 0,
+    });
+
+    expect(mockPrisma.automation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ instagramEnabled: true }),
+      })
+    );
+  });
 });

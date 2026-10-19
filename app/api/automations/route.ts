@@ -36,6 +36,8 @@ const createAutomationSchema = z
     keywords: z.array(z.string().min(1).max(50)).max(10).optional().default([]),
     matchAnyWord: z.boolean().optional().default(false),
     dmTriggerEnabled: z.boolean().optional().default(false),
+    instagramEnabled: z.boolean().optional().default(true),
+    facebookEnabled: z.boolean().optional().default(true),
     dmMessage: z.string().min(1).max(1000),
     openingDmEnabled: z.boolean().optional().default(false),
     openingDmMessage: z.string().max(1000).optional().nullable(),
@@ -76,6 +78,10 @@ const createAutomationSchema = z
     { message: "Choose which post(s) trigger the campaign", path: ["postId"] }
   )
   // And it must match either specific words or any word.
+  .refine((d) => d.instagramEnabled || d.facebookEnabled, {
+    message: "Turn on at least one channel (Instagram or Facebook)",
+    path: ["instagramEnabled"],
+  })
   .refine((d) => d.matchAnyWord || d.keywords.length >= 1, {
     message: "Add at least one keyword, or match any word",
     path: ["keywords"],
@@ -99,6 +105,8 @@ const updateAutomationSchema = z.object({
   keywords: z.array(z.string().min(1).max(50)).max(10).optional(),
   matchAnyWord: z.boolean().optional(),
   dmTriggerEnabled: z.boolean().optional(),
+  instagramEnabled: z.boolean().optional(),
+  facebookEnabled: z.boolean().optional(),
   dmMessage: z.string().min(1).max(1000).optional(),
   openingDmEnabled: z.boolean().optional(),
   openingDmMessage: z.string().max(1000).optional().nullable(),
@@ -383,6 +391,8 @@ export async function POST(request: NextRequest) {
       keywords: matchAnyWord ? [] : parsed.data.keywords,
       matchAnyWord,
       dmTriggerEnabled: parsed.data.dmTriggerEnabled,
+      instagramEnabled: parsed.data.instagramEnabled,
+      facebookEnabled: parsed.data.facebookEnabled,
       dmMessage: parsed.data.dmMessage,
       openingDmEnabled,
       openingDmMessage: openingDmEnabled
@@ -490,6 +500,19 @@ export async function PATCH(request: NextRequest) {
     secondaryButtonLabel,
     ...automationData
   } = parsed.data;
+
+  // A campaign switched off on every channel would silently never answer.
+  const nextInstagram = automationData.instagramEnabled ?? existing.instagramEnabled;
+  const nextFacebook = automationData.facebookEnabled ?? existing.facebookEnabled;
+  if (!nextInstagram && !nextFacebook) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Turn on at least one channel (Instagram or Facebook)",
+      },
+      { status: 400 }
+    );
+  }
 
   // Keep dependent fields consistent: any-word clears keywords; a disabled
   // opening DM clears its message and button.

@@ -446,5 +446,9 @@
   "{name} Campaign Report": "{name} 活動報表",
   "{type} post": "{type} 貼文",
   "”": "」",
-  "← Campaigns": "← 返回活動列表"
+  "← Campaigns": "← 返回活動列表",
+  "answer on Instagram": "在 Instagram 回覆",
+  "answer on the linked Facebook Page": "在連結的 Facebook 粉絲專頁回覆",
+  "On Facebook the campaign answers comments on any Page post and, with DM replies on, Messenger messages. The follow requirement does not apply there.": "在 Facebook 上，活動會回覆粉絲專頁任何貼文的留言；開啟私訊回覆時也會回覆 Messenger 訊息。追蹤條件不適用於 Facebook。",
+  "Turn on at least one channel: Instagram or Facebook.": "請至少開啟一個管道：Instagram 或 Facebook。"
 }

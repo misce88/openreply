@@ -446,5 +446,9 @@
   "{name} Campaign Report": "Relatório da campanha {name}",
   "{type} post": "Publicação {type}",
   "”": "”",
-  "← Campaigns": "← Campanhas"
+  "← Campaigns": "← Campanhas",
+  "answer on Instagram": "responder no Instagram",
+  "answer on the linked Facebook Page": "responder na Página do Facebook vinculada",
+  "On Facebook the campaign answers comments on any Page post and, with DM replies on, Messenger messages. The follow requirement does not apply there.": "No Facebook a campanha responde aos comentários em qualquer post da Página e, com as respostas a DMs ativadas, às mensagens do Messenger. A exigência de seguir não se aplica lá.",
+  "Turn on at least one channel: Instagram or Facebook.": "Ative pelo menos um canal: Instagram ou Facebook."
 }

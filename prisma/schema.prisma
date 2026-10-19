@@ -185,6 +185,10 @@ model Automation {
   // keywords above. Independent of the post trigger — a DM has no media, so
   // postId / matchAnyPost do not apply to it.
   dmTriggerEnabled Boolean @default(false)
+  // Which channels the campaign answers on. Facebook means the Page linked to
+  // the Instagram account (comments on its posts and Messenger DMs).
+  instagramEnabled Boolean @default(true)
+  facebookEnabled  Boolean @default(true)
   dmMessage      String
   openingDmEnabled     Boolean @default(false)
   openingDmMessage     String?

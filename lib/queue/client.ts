@@ -39,8 +39,15 @@ export interface ProcessCommentJob {
   source?: CommentSource;
   // Set for comments on the linked Facebook Page. Those posts have their own
   // ids, so campaigns are matched by keyword only instead of by post.
-  platform?: "FACEBOOK";
+  platform?: MessagingPlatform;
 }
+
+/**
+ * Set on jobs that came from the linked Facebook Page (comments on its posts,
+ * Messenger DMs and Messenger button taps). Absent means Instagram, which keeps
+ * every job queued before this field existed on its original path.
+ */
+export type MessagingPlatform = "FACEBOOK";
 
 // Delivered when a user taps an opening DM's button — carries the reveal target.
 export interface ProcessPostbackJob {
@@ -57,6 +64,7 @@ export interface ProcessPostbackJob {
   // How many delayed re-checks have run, counting this one. Absent on jobs
   // queued before re-checks were counted, where `followRecheck` meant one.
   followRecheckAttempt?: number;
+  platform?: MessagingPlatform;
 }
 
 // Scheduled after the link is delivered, to send the appreciation follow-up.
@@ -68,6 +76,7 @@ export interface ProcessFollowUpJob {
   userId: string;
   automationId: string;
   commenterName?: string | null;
+  platform?: MessagingPlatform;
 }
 
 // An inbound DM from a user. Campaigns with `dmTriggerEnabled` whose keywords
@@ -78,6 +87,7 @@ export interface ProcessMessageJob {
   messageId: string;
   messageText: string;
   senderId: string;
+  platform?: MessagingPlatform;
 }
 
 export type DmQueueJob =

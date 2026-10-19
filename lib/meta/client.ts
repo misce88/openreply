@@ -25,7 +25,7 @@ function instagramGraphBase() {
 function messagesUrl(instagramAccountId: string): string {
   return isFacebookLoginMode()
     ? `${facebookGraphBase()}/me/messages`
-    : messagesUrl(instagramAccountId);
+    : `${instagramGraphBase()}/${instagramAccountId}/messages`;
 }
 
 // Page token -> linked Instagram professional account id (Facebook Login mode).

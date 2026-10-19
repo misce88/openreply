@@ -107,6 +107,13 @@ export interface WebhookReadEvent {
   watermark?: number;
 }
 
+/**
+ * Instagram DMs arrive on the "instagram" object; Messenger conversations with
+ * the linked Facebook Page arrive on "page" with the same `messaging` shape.
+ * For "page" events the account id carried in the result is the Page id.
+ */
+type MessagingObject = "instagram" | "page";
+
 interface WebhookPayload {
   object: string;
   entry: WebhookEntry[];
@@ -166,11 +173,12 @@ export function parseCommentEvents(payload: WebhookPayload): WebhookCommentEvent
  * payload. Each event carries the tapping user's IGSID and our postback payload.
  */
 export function parsePostbackEvents(
-  payload: WebhookPayload
+  payload: WebhookPayload,
+  expectedObject: MessagingObject = "instagram"
 ): WebhookPostbackEvent[] {
   const events: WebhookPostbackEvent[] = [];
 
-  if (payload.object !== "instagram") return events;
+  if (payload.object !== expectedObject) return events;
 
   for (const entry of payload.entry ?? []) {
     for (const messaging of entry.messaging ?? []) {
@@ -205,11 +213,12 @@ export function parsePostbackEvents(
  * containing its own keyword trigger itself.
  */
 export function parseMessageEvents(
-  payload: WebhookPayload
+  payload: WebhookPayload,
+  expectedObject: MessagingObject = "instagram"
 ): WebhookMessageEvent[] {
   const events: WebhookMessageEvent[] = [];
 
-  if (payload.object !== "instagram") return events;
+  if (payload.object !== expectedObject) return events;
 
   for (const entry of payload.entry ?? []) {
     for (const messaging of entry.messaging ?? []) {
@@ -320,4 +329,22 @@ export function parseFacebookPageCommentEvents(payload: {
     }
   }
   return events;
+}
+
+/** Messenger DMs sent to the linked Facebook Page (object "page"). */
+export function parseFacebookPageMessageEvents(
+  payload: WebhookPayload
+): Array<Omit<WebhookMessageEvent, "instagramAccountId"> & { pageId: string }> {
+  return parseMessageEvents(payload, "page").map(
+    ({ instagramAccountId, ...rest }) => ({ pageId: instagramAccountId, ...rest })
+  );
+}
+
+/** Messenger button taps on messages sent by the linked Facebook Page. */
+export function parseFacebookPagePostbackEvents(
+  payload: WebhookPayload
+): Array<Omit<WebhookPostbackEvent, "instagramAccountId"> & { pageId: string }> {
+  return parsePostbackEvents(payload, "page").map(
+    ({ instagramAccountId, ...rest }) => ({ pageId: instagramAccountId, ...rest })
+  );
 }

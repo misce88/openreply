@@ -38,6 +38,8 @@ interface LoadedCampaign {
   keywords: string[];
   matchAnyWord: boolean;
   dmTriggerEnabled: boolean;
+  instagramEnabled?: boolean;
+  facebookEnabled?: boolean;
   dmMessage: string;
   openingDmEnabled: boolean;
   openingDmMessage: string | null;
@@ -160,6 +162,8 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
   const [matchMode, setMatchMode] = useState<MatchMode>("specific");
   const [keywordText, setKeywordText] = useState("");
   const [dmTriggerEnabled, setDmTriggerEnabled] = useState(false);
+  const [instagramEnabled, setInstagramEnabled] = useState(true);
+  const [facebookEnabled, setFacebookEnabled] = useState(true);
 
   const [publicReplyEnabled, setPublicReplyEnabled] = useState(false);
   const [publicReplyMessages, setPublicReplyMessages] = useState<string[]>([""]);
@@ -261,6 +265,8 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
         setMatchMode(c.matchAnyWord ? "any" : "specific");
         setKeywordText(c.keywords.join(", "));
         setDmTriggerEnabled(c.dmTriggerEnabled ?? false);
+        setInstagramEnabled(c.instagramEnabled ?? true);
+        setFacebookEnabled(c.facebookEnabled ?? true);
         setPublicReplyEnabled(c.publicReplyEnabled);
         setPublicReplyMessages(
           c.publicReplyMessages?.length
@@ -393,6 +399,8 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
       return setError(t("Pick a post or reel to trigger the campaign."));
     if (matchMode === "specific" && keywords.length === 0)
       return setError(t("Add at least one keyword, or switch to any word."));
+    if (!instagramEnabled && !facebookEnabled)
+      return setError(t("Turn on at least one channel: Instagram or Facebook."));
     if (!dmMessage.trim()) return setError(t("Add the DM with the link."));
     if (openingDmEnabled && (!openingDmMessage.trim() || !openingDmButtonLabel.trim()))
       return setError(t("Your opening DM needs a message and a button label."));
@@ -409,6 +417,8 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
       matchAnyWord: matchMode === "any",
       keywords: matchMode === "any" ? [] : keywords,
       dmTriggerEnabled,
+      instagramEnabled,
+      facebookEnabled,
       dmMessage,
       openingDmEnabled,
       openingDmMessage: openingDmEnabled ? openingDmMessage : null,
@@ -738,6 +748,27 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
               {matchMode === "any"
                 ? t("Every DM to this account gets the reply below — use with care.")
                 : t("A DM containing any of these words gets the same reply, no comment needed.")}
+            </p>
+          )}
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+            <span className="text-sm text-foreground">{t("answer on Instagram")}</span>
+            <Toggle
+              on={instagramEnabled}
+              onToggle={() => setInstagramEnabled(!instagramEnabled)}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+            <span className="text-sm text-foreground">
+              {t("answer on the linked Facebook Page")}
+            </span>
+            <Toggle
+              on={facebookEnabled}
+              onToggle={() => setFacebookEnabled(!facebookEnabled)}
+            />
+          </div>
+          {facebookEnabled && (
+            <p className="text-xs text-muted">
+              {t("On Facebook the campaign answers comments on any Page post and, with DM replies on, Messenger messages. The follow requirement does not apply there.")}
             </p>
           )}
           <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">

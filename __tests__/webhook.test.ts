@@ -10,6 +10,8 @@ import {
   parseCommentEvents,
   parseMessageEvents,
   parseReadEvents,
+  parseFacebookPageMessageEvents,
+  parseFacebookPagePostbackEvents,
 } from "../lib/meta/webhook";
 import { createHmac } from "crypto";
 
@@ -513,5 +515,51 @@ describe("parseReadEvents", () => {
     };
 
     expect(parseReadEvents(payload)).toHaveLength(0);
+  });
+});
+
+describe("Facebook Page messaging (Messenger)", () => {
+  const pagePayload = {
+    object: "page",
+    entry: [
+      {
+        id: "page_1",
+        time: 1,
+        messaging: [
+          {
+            sender: { id: "psid_9" },
+            recipient: { id: "page_1" },
+            message: { mid: "m_1", text: " CASA " },
+          },
+          {
+            // The Page's own outgoing message must never trigger a reply.
+            sender: { id: "page_1" },
+            recipient: { id: "psid_9" },
+            message: { mid: "m_2", text: "CASA", is_echo: true },
+          },
+          {
+            sender: { id: "psid_9" },
+            recipient: { id: "page_1" },
+            postback: { mid: "m_3", payload: "reveal:auto_1:open" },
+          },
+        ],
+      },
+    ],
+  };
+
+  it("reads Messenger DMs sent to the Page, skipping echoes", () => {
+    expect(parseFacebookPageMessageEvents(pagePayload)).toEqual([
+      { pageId: "page_1", messageId: "m_1", messageText: "CASA", senderId: "psid_9" },
+    ]);
+  });
+
+  it("reads Messenger button taps", () => {
+    expect(parseFacebookPagePostbackEvents(pagePayload)).toEqual([
+      { pageId: "page_1", userId: "psid_9", payload: "reveal:auto_1:open", mid: "m_3" },
+    ]);
+  });
+
+  it("keeps Page events out of the Instagram parsers", () => {
+    expect(parseMessageEvents(pagePayload)).toEqual([]);
   });
 });
