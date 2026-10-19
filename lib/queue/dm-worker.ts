@@ -321,6 +321,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
             ],
           }),
       isActive: true,
+      commentTriggerEnabled: true,
       ...channelScope(job.data.platform),
       instagramAccount: {
         instagramId: instagramAccountId,

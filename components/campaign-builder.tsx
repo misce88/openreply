@@ -38,6 +38,7 @@ interface LoadedCampaign {
   keywords: string[];
   matchAnyWord: boolean;
   dmTriggerEnabled: boolean;
+  commentTriggerEnabled?: boolean;
   instagramEnabled?: boolean;
   facebookEnabled?: boolean;
   dmMessage: string;
@@ -162,6 +163,7 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
   const [matchMode, setMatchMode] = useState<MatchMode>("specific");
   const [keywordText, setKeywordText] = useState("");
   const [dmTriggerEnabled, setDmTriggerEnabled] = useState(false);
+  const [commentTriggerEnabled, setCommentTriggerEnabled] = useState(true);
   const [instagramEnabled, setInstagramEnabled] = useState(true);
   const [facebookEnabled, setFacebookEnabled] = useState(true);
 
@@ -265,6 +267,7 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
         setMatchMode(c.matchAnyWord ? "any" : "specific");
         setKeywordText(c.keywords.join(", "));
         setDmTriggerEnabled(c.dmTriggerEnabled ?? false);
+        setCommentTriggerEnabled(c.commentTriggerEnabled ?? true);
         setInstagramEnabled(c.instagramEnabled ?? true);
         setFacebookEnabled(c.facebookEnabled ?? true);
         setPublicReplyEnabled(c.publicReplyEnabled);
@@ -399,6 +402,8 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
       return setError(t("Pick a post or reel to trigger the campaign."));
     if (matchMode === "specific" && keywords.length === 0)
       return setError(t("Add at least one keyword, or switch to any word."));
+    if (!commentTriggerEnabled && !dmTriggerEnabled)
+      return setError(t("Turn on comments, DMs, or both as the trigger."));
     if (!instagramEnabled && !facebookEnabled)
       return setError(t("Turn on at least one channel: Instagram or Facebook."));
     if (!dmMessage.trim()) return setError(t("Add the DM with the link."));
@@ -417,6 +422,7 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
       matchAnyWord: matchMode === "any",
       keywords: matchMode === "any" ? [] : keywords,
       dmTriggerEnabled,
+      commentTriggerEnabled,
       instagramEnabled,
       facebookEnabled,
       dmMessage,
@@ -733,6 +739,15 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
           >
             {t("any word")}
           </Radio>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+            <span className="text-sm text-foreground">
+              {t("reply to comments under the posts")}
+            </span>
+            <Toggle
+              on={commentTriggerEnabled}
+              onToggle={() => setCommentTriggerEnabled(!commentTriggerEnabled)}
+            />
+          </div>
           <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
             <span className="text-sm text-foreground">
               {t("also reply when someone DMs")}{" "}

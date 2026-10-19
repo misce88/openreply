@@ -70,7 +70,7 @@ function errMessage(error: unknown): string {
 export async function reconcileComments(): Promise<void> {
   const automations = await prisma.automation.findMany({
     // Polling only covers Instagram media; Facebook-only campaigns are skipped.
-    where: { isActive: true, instagramEnabled: true },
+    where: { isActive: true, instagramEnabled: true, commentTriggerEnabled: true },
     select: {
       id: true,
       name: true,
