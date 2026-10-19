@@ -346,8 +346,9 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
     ? foundAutomations
         .filter(
           (a) =>
-            a.matchAnyWord ||
-            matchKeywords(commentText, a.keywords, a.wholeWordMatch).matched
+            (a.matchAnyWord ||
+              matchKeywords(commentText, a.keywords, a.wholeWordMatch).matched) &&
+            !(a.maxCommentLength && commentText.trim().length > a.maxCommentLength)
         )
         .slice(-1)
     : foundAutomations;
@@ -363,6 +364,13 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         );
 
     if (!matchResult.matched) {
+      continue;
+    }
+
+    if (
+      automation.maxCommentLength &&
+      commentText.trim().length > automation.maxCommentLength
+    ) {
       continue;
     }
 

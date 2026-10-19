@@ -39,6 +39,7 @@ interface LoadedCampaign {
   matchAnyWord: boolean;
   dmTriggerEnabled: boolean;
   commentTriggerEnabled?: boolean;
+  maxCommentLength?: number | null;
   instagramEnabled?: boolean;
   facebookEnabled?: boolean;
   dmMessage: string;
@@ -164,6 +165,7 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
   const [keywordText, setKeywordText] = useState("");
   const [dmTriggerEnabled, setDmTriggerEnabled] = useState(false);
   const [commentTriggerEnabled, setCommentTriggerEnabled] = useState(true);
+  const [maxCommentLength, setMaxCommentLength] = useState("");
   const [instagramEnabled, setInstagramEnabled] = useState(true);
   const [facebookEnabled, setFacebookEnabled] = useState(true);
 
@@ -268,6 +270,7 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
         setKeywordText(c.keywords.join(", "));
         setDmTriggerEnabled(c.dmTriggerEnabled ?? false);
         setCommentTriggerEnabled(c.commentTriggerEnabled ?? true);
+        setMaxCommentLength(c.maxCommentLength ? String(c.maxCommentLength) : "");
         setInstagramEnabled(c.instagramEnabled ?? true);
         setFacebookEnabled(c.facebookEnabled ?? true);
         setPublicReplyEnabled(c.publicReplyEnabled);
@@ -423,6 +426,7 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
       keywords: matchMode === "any" ? [] : keywords,
       dmTriggerEnabled,
       commentTriggerEnabled,
+      maxCommentLength: Number(maxCommentLength) > 0 ? Number(maxCommentLength) : null,
       instagramEnabled,
       facebookEnabled,
       dmMessage,
@@ -748,6 +752,21 @@ export default function CampaignBuilder({ mode, campaignId }: CampaignBuilderPro
               onToggle={() => setCommentTriggerEnabled(!commentTriggerEnabled)}
             />
           </div>
+          {commentTriggerEnabled && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+              <span className="text-sm text-foreground">
+                {t("ignore comments longer than (characters, empty = no limit)")}
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={maxCommentLength}
+                onChange={(e) => setMaxCommentLength(e.target.value)}
+                className="w-20 rounded-md border border-border bg-transparent px-2 py-1 text-sm"
+              />
+            </div>
+          )}
           <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
             <span className="text-sm text-foreground">
               {t("also reply when someone DMs")}{" "}

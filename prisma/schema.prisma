@@ -187,6 +187,9 @@ model Automation {
   dmTriggerEnabled Boolean @default(false)
   // Turn off to make a DM-only campaign that ignores comments on posts.
   commentTriggerEnabled Boolean @default(true)
+  // When set, a comment longer than this many characters does not trigger the
+  // campaign (the keyword has to be the comment, not a word inside a remark).
+  maxCommentLength Int?
   // Which channels the campaign answers on. Facebook means the Page linked to
   // the Instagram account (comments on its posts and Messenger DMs).
   instagramEnabled Boolean @default(true)
