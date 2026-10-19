@@ -1059,3 +1059,92 @@ export async function debugToken(inputToken: string, accessToken: string) {
   const response = await fetch(url.toString());
   return handleResponse(response);
 }
+
+export interface FacebookPageComment {
+  id: string;
+  text: string;
+  authorId: string;
+  authorName: string;
+  createdTime: string;
+  postId: string;
+}
+
+/**
+ * Top-level comments left under a Facebook Page's posts and videos since a
+ * point in time. Used to recover comments that arrived while no campaign was
+ * switched on (Facebook never re-delivers old webhook events).
+ */
+export async function getFacebookPageCommentsSince(
+  accessToken: string,
+  since: Date
+): Promise<{ pageId: string; comments: FacebookPageComment[] }> {
+  const pageId = await resolvePageIdForToken(accessToken);
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  const getJson = async <T>(url: string): Promise<T> =>
+    handleResponse<T>(await fetch(url, { headers }));
+
+  const targets = new Map<string, string>();
+  for (const edge of ["published_posts", "videos"]) {
+    let next: string | undefined = (() => {
+      const url = new URL(`${facebookGraphBase()}/${pageId}/${edge}`);
+      url.searchParams.set("fields", "id,created_time");
+      url.searchParams.set("limit", "50");
+      return url.toString();
+    })();
+    for (let page = 0; next && page < 2; page++) {
+      const data: {
+        data?: Array<{ id: string; created_time?: string }>;
+        paging?: { next?: string };
+      } = await getJson(next);
+      for (const item of data.data ?? []) targets.set(item.id, item.created_time ?? "");
+      next = data.paging?.next;
+    }
+  }
+
+  const comments: FacebookPageComment[] = [];
+  const seen = new Set<string>();
+  for (const targetId of targets.keys()) {
+    let next: string | undefined = (() => {
+      const url = new URL(`${facebookGraphBase()}/${targetId}/comments`);
+      url.searchParams.set("fields", "id,message,from{id,name},created_time");
+      url.searchParams.set("filter", "toplevel");
+      url.searchParams.set("order", "reverse_chronological");
+      url.searchParams.set("limit", "100");
+      return url.toString();
+    })();
+    for (let page = 0; next && page < 5; page++) {
+      const data: {
+        data?: Array<{
+          id: string;
+          message?: string;
+          created_time?: string;
+          from?: { id?: string; name?: string };
+        }>;
+        paging?: { next?: string };
+      } = await getJson(next);
+      let reachedOlder = false;
+      for (const c of data.data ?? []) {
+        if (c.created_time && new Date(c.created_time) < since) {
+          reachedOlder = true;
+          continue;
+        }
+        const key = c.id.split("_").pop() ?? c.id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (!c.message || !c.from?.id) continue;
+        comments.push({
+          id: c.id,
+          text: c.message,
+          authorId: c.from.id,
+          authorName: c.from.name ?? "",
+          createdTime: c.created_time ?? "",
+          postId: targetId,
+        });
+      }
+      if (reachedOlder) break;
+      next = data.paging?.next;
+    }
+  }
+  return { pageId, comments };
+}
