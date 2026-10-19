@@ -184,6 +184,19 @@ function buildInlineLinkFallback(
   return extraUrls.length > 0 ? `${base}\n${extraUrls.join("\n")}` : base;
 }
 
+/**
+ * A campaign message may hold several variants separated by a line containing
+ * only "###". One is picked at random per send so messages are not identical.
+ */
+export function pickDmVariant(message: string): string {
+  const parts = message
+    .split(/\n\s*###\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length <= 1) return message;
+  return parts[Math.floor(Math.random() * parts.length)];
+}
+
 type RevealAutomation = {
   dmMessage: string;
   linkButtonLabel: string | null;
@@ -209,6 +222,7 @@ async function sendRevealDirectMessage({
   commenterName: string | null;
   context: string;
 }): Promise<void> {
+  automation = { ...automation, dmMessage: pickDmVariant(automation.dmMessage) };
   if (automation.trackedLinks.length === 0) {
     await sendDirectMessage({
       context: accessToken,
@@ -701,6 +715,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
       await releaseWorkspaceDMReservation(automation.workspaceId, usage.periodStart);
       continue;
     }
+    const dmVariant = pickDmVariant(automation.dmMessage);
     let delivered = false;
     try {
       if (useOpeningDm) {
@@ -740,7 +755,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         // Try button template first; if Meta rejects it, fall back to inline links.
         const bodyText =
           renderMessageWithoutLink({
-            message: automation.dmMessage,
+            message: dmVariant,
             commenterName,
           }) || "Here's your link:";
         const buttons = buildLinkButtons(
@@ -769,7 +784,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
             formatError(buttonError)
           );
           const fallbackMessage = buildInlineLinkFallback(
-            automation.dmMessage,
+            dmVariant,
             commenterName,
             automation.trackedLinks,
             bodyText,
@@ -789,7 +804,7 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
         }
       } else {
         const dmMessage = renderMessageWithTracking({
-          message: automation.dmMessage,
+          message: dmVariant,
           commenterName,
           trackedLinks: automation.trackedLinks,
           recipientToken: hashRecipientId(commenterId),
