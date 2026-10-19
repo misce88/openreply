@@ -1077,7 +1077,7 @@ export interface FacebookPageComment {
 export async function getFacebookPageCommentsSince(
   accessToken: string,
   since: Date
-): Promise<{ pageId: string; comments: FacebookPageComment[] }> {
+): Promise<{ pageId: string; targets: number; comments: FacebookPageComment[] }> {
   const pageId = await resolvePageIdForToken(accessToken);
   const headers = { Authorization: `Bearer ${accessToken}` };
 
@@ -1085,7 +1085,8 @@ export async function getFacebookPageCommentsSince(
     handleResponse<T>(await fetch(url, { headers }));
 
   const targets = new Map<string, string>();
-  for (const edge of ["published_posts", "videos"]) {
+  for (const edge of ["published_posts", "videos", "video_reels"]) {
+    try {
     let next: string | undefined = (() => {
       const url = new URL(`${facebookGraphBase()}/${pageId}/${edge}`);
       url.searchParams.set("fields", "id,created_time");
@@ -1099,6 +1100,9 @@ export async function getFacebookPageCommentsSince(
       } = await getJson(next);
       for (const item of data.data ?? []) targets.set(item.id, item.created_time ?? "");
       next = data.paging?.next;
+    }
+    } catch {
+      // An edge the Page does not expose (e.g. no Reels) must not stop the others.
     }
   }
 
@@ -1146,5 +1150,5 @@ export async function getFacebookPageCommentsSince(
       next = data.paging?.next;
     }
   }
-  return { pageId, comments };
+  return { pageId, targets: targets.size, comments };
 }
