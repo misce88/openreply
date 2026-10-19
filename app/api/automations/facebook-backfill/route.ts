@@ -14,6 +14,9 @@ const bodySchema = z.object({
   instagramAccountId: z.string().min(1),
   days: z.number().int().min(1).max(7).default(7),
   dryRun: z.boolean().default(true),
+  // Only recover short comments (the keyword on its own), not long remarks
+  // that merely contain the word.
+  maxCommentLength: z.number().int().min(1).max(500).optional(),
 });
 
 /**
@@ -32,7 +35,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ success: false, error: "Invalid input" }, { status: 400 });
   }
-  const { instagramAccountId, days, dryRun } = parsed.data;
+  const { instagramAccountId, days, dryRun, maxCommentLength } = parsed.data;
 
   const account = await prisma.instagramAccount.findFirst({
     where: { id: instagramAccountId, workspaceId },
@@ -63,6 +66,7 @@ export async function POST(request: NextRequest) {
   let enqueued = 0;
 
   for (const c of comments) {
+    if (maxCommentLength && c.text.trim().length > maxCommentLength) continue;
     if (c.authorId === pageId) continue; // the Page's own public replies
     const matching = automations.filter(
       (a) => a.matchAnyWord || matchKeywords(c.text, a.keywords, a.wholeWordMatch).matched
