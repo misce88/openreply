@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
   });
 
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const { pageId, targets, comments } = await getFacebookPageCommentsSince(
+  const { pageId, targets, comments, debug } = await getFacebookPageCommentsSince(
     decryptToken(account.accessToken),
     since
   );
@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
     data: {
       dryRun,
       postsChecked: targets,
+      debug,
       scanned: comments.length,
       matched: rows.length,
       toSend: rows.filter((r) => !r.alreadyAnswered).length,

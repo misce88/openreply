@@ -1077,7 +1077,7 @@ export interface FacebookPageComment {
 export async function getFacebookPageCommentsSince(
   accessToken: string,
   since: Date
-): Promise<{ pageId: string; targets: number; comments: FacebookPageComment[] }> {
+): Promise<{ pageId: string; targets: number; comments: FacebookPageComment[]; debug: Record<string, number> }> {
   const pageId = await resolvePageIdForToken(accessToken);
   const headers = { Authorization: `Bearer ${accessToken}` };
 
@@ -1107,6 +1107,7 @@ export async function getFacebookPageCommentsSince(
   }
 
   const comments: FacebookPageComment[] = [];
+  const debug = { raw: 0, noMessage: 0, noFrom: 0, tooOld: 0, targetsWithComments: 0 };
   const seen = new Set<string>();
   for (const targetId of targets.keys()) {
     let next: string | undefined = (() => {
@@ -1128,20 +1129,27 @@ export async function getFacebookPageCommentsSince(
         paging?: { next?: string };
       } = await getJson(next);
       let reachedOlder = false;
+      if ((data.data ?? []).length) debug.targetsWithComments++;
       for (const c of data.data ?? []) {
+        debug.raw++;
+        if (!c.from?.id) debug.noFrom++;
+        if (!c.message) debug.noMessage++;
         if (c.created_time && new Date(c.created_time) < since) {
           reachedOlder = true;
+          debug.tooOld++;
           continue;
         }
         const key = c.id.split("_").pop() ?? c.id;
         if (seen.has(key)) continue;
         seen.add(key);
-        if (!c.message || !c.from?.id) continue;
+        if (!c.message) continue;
+        // Without the Page-content permission Facebook may leave `from` out.
+        // A private reply only needs the comment id, so keep the comment.
         comments.push({
           id: c.id,
           text: c.message,
-          authorId: c.from.id,
-          authorName: c.from.name ?? "",
+          authorId: c.from?.id ?? `fb_${key}`,
+          authorName: c.from?.name ?? "",
           createdTime: c.created_time ?? "",
           postId: targetId,
         });
@@ -1150,5 +1158,5 @@ export async function getFacebookPageCommentsSince(
       next = data.paging?.next;
     }
   }
-  return { pageId, targets: targets.size, comments };
+  return { pageId, targets: targets.size, comments, debug };
 }
