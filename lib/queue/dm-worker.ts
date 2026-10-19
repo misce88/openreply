@@ -1661,7 +1661,11 @@ async function recordWorkerFailure(
 export function createDMWorker(): Worker<DmQueueJob> {
   const worker = new Worker<DmQueueJob>("dm-processing", processJob, {
     connection: getRedisConnection(),
-    concurrency: 5,
+    concurrency: 2,
+    // Never send in bursts: a flood of messages in a minute made Facebook
+    // restrict the Page from messaging. One job every 4 seconds is at most
+    // 900 an hour; the per-account Instagram cap (750 DMs/hour) still applies on top.
+    limiter: { max: 1, duration: 4000 },
     settings: {
       backoffStrategy: (attemptsMade: number) =>
         BACKOFF_DELAYS[Math.min(attemptsMade - 1, BACKOFF_DELAYS.length - 1)],
